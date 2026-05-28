@@ -23,7 +23,26 @@
       "watchface": false
     },
     "messageKeys": [
-      "dummy"
+      "SETTINGS_SYNC",
+      "SETTINGS_UPDATE",
+      "SPOTS_BATCH_START",
+      "SPOTS_BATCH_ITEM",
+      "SPOTS_BATCH_END",
+      "NEW_SPOT_COUNT",
+      "POLL_START",
+      "POLL_STOP",
+      "SPOT_ID",
+      "SPOT_CALLSIGN",
+      "SPOT_FREQ",
+      "SPOT_MODE",
+      "SPOT_PARK_REF",
+      "SPOT_LOCATION",
+      "SPOT_COMMENT",
+      "SPOT_TIMESTAMP",
+      "SPOT_INDEX",
+      "SPOT_TOTAL",
+      "BAND_MASK",
+      "MODE_MASK"
     ],
     "resources": {
       "media": []
