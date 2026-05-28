@@ -1,36 +1,49 @@
-# pota-pebble
+# POTAPebble
 
-A Pebble watchapp/watchface written in C using the Pebble SDK.
+A Pebble watchapp for [Parks on the Air (POTA)](https://parksontheair.com) hunters. Fetches live spots from the POTA API and displays them on your wrist — keep your phone in your bag and focus on the radio.
 
-## Building & running
+**KK4PWJ** — built for aplite, runs on all Pebble hardware.
+
+## Features
+
+- Live spot list, updated every 30 seconds
+- Filter by band (160m–70cm) and mode (SSB, CW, FT8, FT4, RTTY, AM, FM, Digital)
+- Vibrates once per poll cycle when new matching spots arrive (silent on first load)
+- Tap any spot for full detail: park name, frequency, mode, comment, age
+- Cursor follows the same spot across list refreshes
+- "No phone" banner when Bluetooth drops; list freezes and resumes on reconnect
+- Filters persist across app restarts
+
+## Usage
+
+1. Open the app → **Spots** to see the live list
+2. Up/Down to scroll, Select to view spot detail, Back to return
+3. From the main menu → **Settings → Bands / Modes** to toggle filters
+
+## Building
+
+Requires the [Rebble SDK](https://developer.repebble.com).
 
 ```sh
-pebble build                          # build for all targetPlatforms
-pebble install --emulator emery       # install on the emery emulator
-pebble install --phone <ip>           # install to a paired phone
+pebble build                        # build for all platforms
+pebble install --emulator aplite    # run on the aplite emulator
+pebble install --phone <ip>         # sideload to a paired phone
+pebble logs --emulator aplite       # stream logs
 ```
 
-## Target platforms
+## Architecture
 
-`targetPlatforms` in `package.json` controls which watches you build for. The
-modern Pebble hardware is **emery** (Pebble Time 2), **gabbro** (Pebble Round
-2), and **flint** (Pebble 2 Duo); the original Pebble platforms (aplite,
-basalt, chalk, diorite) are included by default for backwards compatibility.
+| Layer | Responsibility |
+|---|---|
+| `src/c/pota-pebble.c` | Watch UI, navigation, vibration, persist mirror |
+| `src/pkjs/index.js` | HTTP polling, filtering, diffing, settings (localStorage) |
 
-## Project layout
+The phone-side JS owns the canonical filter state in `localStorage`. The watch mirrors it in `persist_*` for instant UI rendering on launch, then PKJS overwrites the mirror via `SETTINGS_SYNC` on each startup.
 
-```
-src/c/           C source for the watchapp
-src/pkjs/        PebbleKit JS (phone-side) source, if any
-worker_src/c/    Background worker source, if any
-resources/       Images, fonts, and other bundled resources
-package.json     Project metadata (UUID, platforms, resources, message keys)
-wscript          Build rules — usually no need to edit
-```
+Polling runs only while the Spots screen is visible. No background behavior.
 
-By default this project is configured as a watchapp. To make it a watchface,
-set `pebble.watchapp.watchface` to `true` in `package.json`.
+## API
 
-## Documentation
+Uses the unofficial POTA API: `https://api.pota.app/spot/activator`
 
-Full SDK docs, tutorials, and API reference: <https://developer.repebble.com>
+Polls every 30 seconds. Identifies as `POTAPebble/0.1 (KK4PWJ)`.
