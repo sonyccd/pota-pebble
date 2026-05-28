@@ -1,0 +1,27 @@
+# Pebble build output
+build/
+*.pbw
+
+# Pebble SDK / waf
+.waf-*
+.waflock
+.lock-waf*
+.pebble-cache/
+
+# Node (PKJS / npm deps if you have a phone-side component)
+node_modules/
+npm-debug.log*
+yarn-error.log*
+
+# Editor / IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.DS_Store
+Thumbs.db
+
+# OS / misc
+*.log
+*.tmp
