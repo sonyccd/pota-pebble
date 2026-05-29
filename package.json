@@ -1,7 +1,7 @@
 {
   "name": "pota-pebble",
   "author": "Brad Bazemore",
-  "version": "0.0.1",
+  "version": "0.0.2",
   "keywords": ["pebble-app"],
   "private": true,
   "dependencies": {},
