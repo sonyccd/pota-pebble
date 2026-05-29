@@ -50,6 +50,8 @@ static char    s_selected_spot_id[16];
 static uint32_t s_band_mask;
 static uint32_t s_mode_mask;
 
+static void prv_poll_retry_callback(void *context);
+
 /* Window / layer pointers */
 static Window    *s_main_window;
 static MenuLayer *s_main_menu_layer;
@@ -60,6 +62,9 @@ static Layer     *s_status_layer;
 static bool       s_spots_visible   = false;
 static bool       s_bt_connected    = true;
 static bool       s_received_batch  = false;
+static bool       s_poll_acked        = false;  // true once SPOTS_BATCH_START arrives
+static bool       s_batch_in_progress = false;  // true between BATCH_START and BATCH_END
+static AppTimer  *s_poll_retry_timer  = NULL;
 
 static Window       *s_detail_window;
 static ScrollLayer  *s_detail_scroll;
@@ -116,12 +121,22 @@ static void prv_inbox_received(DictionaryIterator *iter, void *context) {
     }
     APP_LOG(APP_LOG_LEVEL_DEBUG, "Settings synced bands=%lu modes=%lu",
             (unsigned long)s_band_mask, (unsigned long)s_mode_mask);
+    /* PKJS just became ready (ready event, or restart without BT drop).
+       If Spots is visible and no batch is in progress, (re)kick polling. */
+    if (s_spots_visible && !s_batch_in_progress) {
+      s_poll_acked = false;
+      prv_send_key(MESSAGE_KEY_POLL_START);
+      if (s_poll_retry_timer) app_timer_cancel(s_poll_retry_timer);
+      s_poll_retry_timer = app_timer_register(5000, prv_poll_retry_callback, NULL);
+    }
     return;
   }
 
   /* SPOTS_BATCH_START — value is the total spot count */
   t = dict_find(iter, MESSAGE_KEY_SPOTS_BATCH_START);
   if (t) {
+    s_poll_acked        = true;
+    s_batch_in_progress = true;
     s_staging_total = (int)t->value->int32;
     if (s_staging_total > MAX_SPOTS) s_staging_total = MAX_SPOTS;
     memset(s_staging, 0, sizeof(Spot) * s_staging_total);
@@ -131,6 +146,7 @@ static void prv_inbox_received(DictionaryIterator *iter, void *context) {
   /* SPOTS_BATCH_ITEM — one spot per message */
   t = dict_find(iter, MESSAGE_KEY_SPOTS_BATCH_ITEM);
   if (t) {
+    if (!s_batch_in_progress) return;  // BATCH_START was dropped; discard
     Tuple *idx_t = dict_find(iter, MESSAGE_KEY_SPOT_INDEX);
     if (!idx_t) return;
     int idx = (int)idx_t->value->int32;
@@ -159,6 +175,9 @@ static void prv_inbox_received(DictionaryIterator *iter, void *context) {
   /* SPOTS_BATCH_END — swap staging → live, refresh UI */
   t = dict_find(iter, MESSAGE_KEY_SPOTS_BATCH_END);
   if (t) {
+    if (!s_batch_in_progress) return;  // BATCH_START was dropped; discard
+    s_batch_in_progress = false;
+
     int new_count = 0;
     Tuple *nc = dict_find(iter, MESSAGE_KEY_NEW_SPOT_COUNT);
     if (nc) new_count = (int)nc->value->int32;
@@ -185,6 +204,12 @@ static void prv_inbox_received(DictionaryIterator *iter, void *context) {
     }
     s_received_batch = true;
     APP_LOG(APP_LOG_LEVEL_DEBUG, "Batch: %d spots, %d new", s_spot_count, new_count);
+    /* Reset so the retry mechanism protects the next 30 s auto-poll cycle too */
+    s_poll_acked = false;
+    if (s_spots_visible) {
+      if (s_poll_retry_timer) app_timer_cancel(s_poll_retry_timer);
+      s_poll_retry_timer = app_timer_register(36000, prv_poll_retry_callback, NULL);
+    }
     return;
   }
 }
@@ -466,13 +491,24 @@ static void prv_bt_handler(bool connected) {
   }
   /* Resume polling when the phone reconnects while Spots is on screen */
   if (connected && s_spots_visible) {
+    s_poll_acked = false;
     prv_send_key(MESSAGE_KEY_POLL_START);
+    if (s_poll_retry_timer) app_timer_cancel(s_poll_retry_timer);
+    s_poll_retry_timer = app_timer_register(5000, prv_poll_retry_callback, NULL);
   }
 }
 
 /* ------------------------------------------------------------------ */
 /*  Spots window                                                        */
 /* ------------------------------------------------------------------ */
+
+static void prv_poll_retry_callback(void *context) {
+  s_poll_retry_timer = NULL;
+  if (!s_spots_visible || s_poll_acked) return;
+  APP_LOG(APP_LOG_LEVEL_DEBUG, "POLL_START retry");
+  prv_send_key(MESSAGE_KEY_POLL_START);
+  s_poll_retry_timer = app_timer_register(5000, prv_poll_retry_callback, NULL);
+}
 
 static uint16_t prv_spots_get_num_rows(MenuLayer *ml, uint16_t section, void *ctx) {
   return (uint16_t)(s_spot_count > 0 ? s_spot_count : 1);
@@ -540,12 +576,19 @@ static void prv_spots_window_unload(Window *window) {
 
 static void prv_spots_window_appear(Window *window) {
   s_spots_visible = true;
+  s_poll_acked = false;
   prv_send_key(MESSAGE_KEY_POLL_START);
+  if (s_poll_retry_timer) app_timer_cancel(s_poll_retry_timer);
+  s_poll_retry_timer = app_timer_register(5000, prv_poll_retry_callback, NULL);
 }
 
 static void prv_spots_window_disappear(Window *window) {
   s_spots_visible = false;
   prv_send_key(MESSAGE_KEY_POLL_STOP);
+  if (s_poll_retry_timer) {
+    app_timer_cancel(s_poll_retry_timer);
+    s_poll_retry_timer = NULL;
+  }
 }
 
 static void prv_push_spots_window(void) {
